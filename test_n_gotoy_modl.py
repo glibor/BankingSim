@@ -10,11 +10,10 @@ import pandas as pd
 from mesa.datacollection import DataCollector
 import statistics
 from numba import jit
-
 import numpy as np
 import sys
 
-# import random
+# import random this is a test
 
 # random.seed(1234)
 np.random.seed(10)

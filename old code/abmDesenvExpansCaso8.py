@@ -37,7 +37,7 @@ class Util:
         return cls.id
 
 
-####################    
+####################
 ##Exogenous factors#
 ####################
 
@@ -1714,13 +1714,13 @@ if __name__ == "__main__":
 
     for i in range(number_repetitions):
         model = MyModel()
-        model.run_model(10000)
+        model.run_model(50)
 
         ##########################
         ####PRINT THE OUTCOMES####
         ##########################
 
-        pd.set_option('max_columns', 100)
+        #pd.set_option('max_columns', 100)
 
         ###############
         # Restrictive###
