@@ -1,7 +1,7 @@
 from copy import copy
 import time
 import numpy as np
-from numba import njit
+#from numba import njit
 from mesa import Agent
 from numpy.random import choice
 from random import choices
@@ -51,7 +51,7 @@ class Bank(Agent):
             strategy.A, strategy.P, strategy.F = list_a[i], list_p[i], list_f[i]
 
     @staticmethod
-    @njit
+    #@njit
     def update_helper(l1, l2):
         return 0.9999 * l1 + 0.005 * l2
 
@@ -60,7 +60,7 @@ class Bank(Agent):
         self.currentlyChosenStrategy = [s for s in self.strategiesOptionsInformation if s.F > probability_threshold][0]
 
     @staticmethod
-    @njit
+    #@njit
     def choice(strats, p):
         random = np.random.random()
         count = 0
@@ -108,8 +108,9 @@ class Bank(Agent):
                 return -self.balanceSheet.capital / total_risk_weighted_assets
         return 0
 
-    def adjust_capital_ratio(self, minimum_capital_ratio_required):  # TODO: Ajustar para novo modelo de clientes
+    def adjust_capital_ratio(self, minimum_capital_ratio_required):  #TODO: Ajustar para novo modelo de clientes
         current_capital_ratio = self.get_capital_adequacy_ratio()
+        print(current_capital_ratio)
         if current_capital_ratio <= minimum_capital_ratio_required:
             adjustment_factor = current_capital_ratio / minimum_capital_ratio_required
             for corporateClient in self.corporateClients:

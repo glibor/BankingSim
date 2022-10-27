@@ -31,10 +31,13 @@ class Depositor(Agent):
             self.EWADampingFactor = ewa_damping_factor
 
     def update_strategy_choice_probability(self):
-        list_a = np.array([s.A + s.strategyProfit for s in self.strategiesOptionsInformation])
+        list_a = np.array([s.A + 0.005*s.strategyProfit for s in self.strategiesOptionsInformation])
         _exp = np.exp(list_a)
         list_p = _exp / np.sum(_exp)
         list_f = np.cumsum(list_p)
+        #print(list_a)
+        #print(_exp)
+        #print(list_p)
         for i, strategy in enumerate(self.strategiesOptionsInformation):
             strategy.A, strategy.P, strategy.F = list_a[i], list_p[i], list_f[i]
 
@@ -78,7 +81,7 @@ class Depositor(Agent):
                     strategy.insolvencyCounter += 1
 
             amount = self.initialDeposit.amount
-            profit = 100 * math.log(final_consumption / amount)
+            profit = 100 * np.log(final_consumption / amount)
             strategy.finalConsumption = final_consumption
             strategy.strategyProfit = profit
             strategy.amountEarlyWithdraw = self.amountEarlyWithdraw

@@ -1,14 +1,14 @@
 class BankEWAStrategy:
     # capital ratio (capital / assets)
-    numberAlphaOptions = 15
+    numberAlphaOptions = 10
     alphaMaxValue = 1
 
     # liquidity ratio(liquid assets / deposits)
-    numberBetaOptions = 15
+    numberBetaOptions = 30
     betaMaxValue = 1
 
     # Mark-up rate: real sector 1+i=c/1-p * (1+mu)
-    numberMuROptions = 25
+    numberMuROptions = 10
     MuRMaxValue = 1
 
     # Mark-up rate: interbank sector 1+i=c/1-p * (1+mu)

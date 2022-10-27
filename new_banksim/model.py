@@ -2,6 +2,7 @@ from mesa import Model
 from mesa.datacollection import DataCollector
 import numpy as np
 import time
+# from numba import jit
 
 from activation import MultiStepActivation
 from agents.bank import Bank
@@ -172,8 +173,9 @@ class MyModel(BankingModel):
                              "Real_Sector_Loans": real_sector_loans,
                              "Real_Sector_Interest_Rate": real_sector_interest_rate,
                              'liquid_assets': liquid_assets,
+                             'Early': early_withdrawal,
                              'credit_demand_fullfiled': credit_demand_fullfiled,
-                             'credit_supply_exahausted':credit_supply_exahausted}
+                             'credit_supply_exahausted': credit_supply_exahausted}
         )
 
     def step(self):
@@ -226,16 +228,22 @@ def credit_demand_fullfiled(model):
     x = [i.creditDemandFulfilled for i in model.schedule.corporate_clients][:-1]
     return np.mean(x)
 
+
 def credit_supply_exahausted(model):
     x = [i.creditSupplyExhausted for i in model.schedule.banks]
     return np.mean(x)
+
+
+def early_withdrawal(model):
+    x = [i.amountEarlyWithdraw for i in model.schedule.depositors]
+    return sum(x)
 
 
 if __name__ == "__main__":
     start = time.perf_counter()
 
     modelo = MyModel()
-    modelo.run_model(1000)
+    modelo.run_model(400)
 
     Modelo_original = modelo.datacollector.get_model_vars_dataframe()
     # Modelo_original

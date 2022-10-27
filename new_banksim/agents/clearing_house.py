@@ -293,6 +293,7 @@ class RealSectorClearingHouse(Agent):
 
                     lender_id = (lender.unique_id - self.numberBanks) % self.numberBanks
                     borrower_id = (borrower.unique_id - self.numberFirms) % self.numberFirms
+                    #print(borrower_id,amount_requested,amount_lent,interest_rate+1)
 
                     self.realSectorLendingMatrix[lender_id, borrower_id] += amount_lent
                     self.realSectorInterestMatrix[lender_id, borrower_id] = interest_rate

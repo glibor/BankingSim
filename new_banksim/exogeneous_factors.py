@@ -27,7 +27,7 @@ class ExogenousFactors:
     numberBanks = 5
     depositInterestRate = 0.005
     interbankInterestRate = 0.01
-    liquidAssetsInterestRate = 0
+    liquidAssetsInterestRate = 0.00
     illiquidAssetDiscountRate = 0.15
     interbankLendingMarketAvailable = True
     banksMaySellNonLiquidAssetsAtDiscountPrices = True
@@ -36,11 +36,11 @@ class ExogenousFactors:
     # Banks
     bankSizeDistribution = BankSizeDistribution.Vanilla
     numberDepositorsPerBank = 50
-    numberCorporateClientsPerBank = 5
+    numberCorporateClientsPerBank = 200
     areBanksZeroIntelligenceAgents = False
 
     # Central Bank
-    centralBankLendingInterestRate = 0.04
+    centralBankLendingInterestRate = 0.045
     offersDiscountWindowLending = True
     minimumCapitalAdequacyRatio = -10
     isCentralBankZeroIntelligenceAgent = True
@@ -53,7 +53,7 @@ class ExogenousFactors:
     interbankPriority = InterbankPriority.Random
 
     # Depositors
-    areDepositorsZeroIntelligenceAgents = True
+    areDepositorsZeroIntelligenceAgents = False
     areBankRunsPossible = True
     amountWithdrawn = 1.0
     probabilityofWithdrawal = 0.15
