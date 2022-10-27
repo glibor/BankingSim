@@ -1,7 +1,10 @@
 from copy import copy
-
+import time
 import numpy as np
+from numba import njit
 from mesa import Agent
+from numpy.random import choice
+from random import choices
 
 from exogeneous_factors import BankSizeDistribution, ExogenousFactors
 from strategies.bank_ewa_strategy import BankEWAStrategy
@@ -21,6 +24,7 @@ class Bank(Agent):
         self.realSectorHelper = RealSectorHelper()
         self.depositors = []  # Depositors
         self.corporateClients = []  # CorporateClients
+        self.creditSupplyExhausted = False
 
         self.liquidityNeeds = 0
         self.bankRunOccurred = False
@@ -36,21 +40,39 @@ class Bank(Agent):
             self.EWADampingFactor = ewa_damping_factor
 
     def update_strategy_choice_probability(self):
-        list_a = np.array([0.9999 * s.A + s.strategyProfitPercentageDamped for s in self.strategiesOptionsInformation])
+        list_A, list_damp_pct = np.array([s.A for s in self.strategiesOptionsInformation]), np.array(
+            [s.strategyProfitPercentageDamped for s in self.strategiesOptionsInformation])
+        list_a = self.update_helper(list_A, list_damp_pct)
         _exp = np.exp(list_a)
-        list_p = _exp / np.sum(_exp)
+        list_p = _exp / (np.sum(_exp))
+
         list_f = np.cumsum(list_p)
         for i, strategy in enumerate(self.strategiesOptionsInformation):
             strategy.A, strategy.P, strategy.F = list_a[i], list_p[i], list_f[i]
+
+    @staticmethod
+    @njit
+    def update_helper(l1, l2):
+        return 0.9999 * l1 + 0.005 * l2
 
     def pick_new_strategy(self):
         probability_threshold = Util.get_random_uniform(1)
         self.currentlyChosenStrategy = [s for s in self.strategiesOptionsInformation if s.F > probability_threshold][0]
 
+    @staticmethod
+    @njit
+    def choice(strats, p):
+        random = np.random.random()
+        count = 0
+        while random > p[count]:
+            count += 1
+        return strats[count]
+
     def reset(self):
         self.liquidityNeeds = 0
         self.bankRunOccurred = False
         self.withdrawalsCounter = 0
+        self.creditSupplyExhausted = False
 
     def reset_collateral(self):
         self.guaranteeHelper = GuaranteeHelper()
@@ -96,7 +118,7 @@ class Bank(Agent):
                 corporateClient.loanAmount = new_loan_amount
                 self.balanceSheet.liquidAssets += (original_loan_amount - new_loan_amount)
 
-            self.update_non_financial_sector_loans()
+            # self.update_non_financial_sector_loans()
 
     def update_non_financial_sector_loans(self):
         self.balanceSheet.nonFinancialSectorLoan = sum(
@@ -141,25 +163,24 @@ class Bank(Agent):
         for depositor in self.depositors:
             depositor.deposit.amount *= deposits_interest_rate
 
-    def collect_loans(self, real_sector_clearing_house): #TODO: UPDATE BASED IN THE REAL SECTOR CLEARING HOUSE MATRIX
+    def collect_loans(self, real_sector_clearing_house):  # TODO: UPDATE BASED IN THE REAL SECTOR CLEARING HOUSE MATRIX
         lender_id = (self.unique_id - real_sector_clearing_house.numberBanks) % real_sector_clearing_house.numberBanks
         lending_vector = real_sector_clearing_house.realSectorLendingMatrix[lender_id, :]
         interest_rate_vector = real_sector_clearing_house.realSectorInterestMatrix[lender_id, :]
         LGD_vector = real_sector_clearing_house.defaultLGDMatrix
         prob_matrix = real_sector_clearing_house.defaultProbabilityMatrix
 
-        print("Antes",sum(lending_vector))
+        # print("Antes",sum(lending_vector))
 
         for n, i in enumerate(lending_vector):
 
-            if Util.get_random_uniform(1) <= prob_matrix[0,n]:
-                amount_paid = i * (1 - LGD_vector[0,n])
+            if Util.get_random_uniform(1) <= prob_matrix[0, n]:
+                amount_paid = i * (1 - LGD_vector[0, n])
             else:
                 amount_paid = i * (1 + interest_rate_vector[n])
             lending_vector[n] = amount_paid
 
         self.balanceSheet.nonFinancialSectorLoan = sum(lending_vector)
-        print(sum(lending_vector))
 
     def offers_liquidity(self):
         return self.liquidityNeeds > 0
@@ -198,6 +219,7 @@ class Bank(Agent):
         original_capital = self.auxBalanceSheet.assets + self.auxBalanceSheet.liabilities
         if ExogenousFactors.banksHaveLimitedLiability:
             resulting_capital = max(resulting_capital, 0)
+        # print(resulting_capital,original_capital)
         return resulting_capital - original_capital
 
     def calculate_profit(self, minimum_capital_ratio_required):
@@ -205,7 +227,7 @@ class Bank(Agent):
             strategy = self.currentlyChosenStrategy
 
             self.bankRunOccurred = (self.withdrawalsCounter > ExogenousFactors.numberDepositorsPerBank / 2)
-
+            # print(self.withdrawalsCounter,ExogenousFactors.numberDepositorsPerBank / 2)
             if self.bankRunOccurred:
                 original_loans = self.auxBalanceSheet.nonFinancialSectorLoan
                 resulting_loans = self.balanceSheet.nonFinancialSectorLoan
@@ -275,8 +297,9 @@ class Bank(Agent):
         mu = strategy.get_MuR_value()
         p = default_probability
         c = self.get_wacc()
-        i = (c / (1 - p)) * (1 + mu)-1
-        # print(mu)
+        # print((c / (1 - p))*(1/(1+1)))
+        i = max((c / (1 - p)) * (1 + mu), 1) - 1
+
         return i
 
     def is_insolvent(self):
@@ -292,6 +315,7 @@ class Bank(Agent):
         return self.balanceSheet.interbankLoan < 0
 
     def period_0(self):
+
         if self.isIntelligent:
             self.update_strategy_choice_probability()
             self.pick_new_strategy()

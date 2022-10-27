@@ -1,5 +1,7 @@
 from mesa import Model
 from mesa.datacollection import DataCollector
+import numpy as np
+import time
 
 from activation import MultiStepActivation
 from agents.bank import Bank
@@ -55,7 +57,7 @@ class BankingModel(Model):
         self.schedule.add_clearing_house(ClearingHouse(*_params, self))
 
         # Real sector Clearing House
-        _params = (self.numberBanks,self.numberFirms)
+        _params = (self.numberBanks, self.numberFirms)
         self.schedule.add_real_clearing_house(RealSectorClearingHouse(*_params, self))
 
         # Banks
@@ -88,7 +90,7 @@ class BankingModel(Model):
                 self.schedule.add_depositor(depositor)
             for i in range(ExogenousFactors.numberCorporateClientsPerBank):
                 corporate_client = CorporateClient(*_params_corporate_clients, bank, self)
-                #bank.corporateClients.append(corporate_client)
+                # bank.corporateClients.append(corporate_client)
                 self.schedule.add_corporate_client(corporate_client)
 
     def step(self):
@@ -99,7 +101,7 @@ class BankingModel(Model):
 
     def run_model(self, n):
         for i in range(n):
-            if i % 1==0:
+            if i % 100 == 0:
                 print(i)
             self.step()
         self.running = False
@@ -165,11 +167,21 @@ class MyModel(BankingModel):
         # DataCollector
         self.datacollector = DataCollector(
             model_reporters={"Insolvencies": number_of_insolvencies,
-                             "Contagions": number_of_contagions}
+                             "Contagions": number_of_contagions,
+                             "Interbank_Loans": interbank_loans,
+                             "Real_Sector_Loans": real_sector_loans,
+                             "Real_Sector_Interest_Rate": real_sector_interest_rate,
+                             'liquid_assets': liquid_assets,
+                             'credit_demand_fullfiled': credit_demand_fullfiled,
+                             'credit_supply_exahausted':credit_supply_exahausted}
         )
 
     def step(self):
+        start = time.perf_counter()
+
         super().step()
+        end = time.perf_counter()
+        # print("Elapsed step = {}s".format((end - start)))
         # DataCollector
         self.datacollector.collect(self)
 
@@ -183,11 +195,56 @@ def number_of_contagions(model):
     return model.schedule.central_bank.insolvencyDueToContagionPerCycleCounter / model.numberBanks
 
 
+def real_sector_loans(model):
+    return np.sum(model.schedule.real_sector_clearing_house.realSectorLendingMatrix)
+
+
+def interbank_loans(model):
+    x = []
+    for i in model.schedule.banks:
+        y = i.balanceSheet.interbankLoan
+        if y > 0:
+            x.append(y)
+    return sum(x)
+
+
+def real_sector_interest_rate(model):
+    lending_matrix = model.schedule.real_sector_clearing_house.realSectorLendingMatrix
+    interest_matrix = model.schedule.real_sector_clearing_house.realSectorInterestMatrix
+    weights_matrix = lending_matrix / np.sum(lending_matrix)
+    weighted_matrix = np.multiply(weights_matrix, interest_matrix)
+    average_interest = np.sum(weighted_matrix)
+    return average_interest
+
+
+def liquid_assets(model):
+    x = [i.balanceSheet.liquidAssets for i in model.schedule.banks]
+    return sum(x)
+
+
+def credit_demand_fullfiled(model):
+    x = [i.creditDemandFulfilled for i in model.schedule.corporate_clients][:-1]
+    return np.mean(x)
+
+def credit_supply_exahausted(model):
+    x = [i.creditSupplyExhausted for i in model.schedule.banks]
+    return np.mean(x)
+
+
 if __name__ == "__main__":
+    start = time.perf_counter()
+
     modelo = MyModel()
-    modelo.run_model(10)
+    modelo.run_model(1000)
 
+    Modelo_original = modelo.datacollector.get_model_vars_dataframe()
+    # Modelo_original
+    Modelo_original.to_stata(r'output_Caso8_Desenv_Expansive.dta')
 
+    end = time.perf_counter()
+    # print("Elapsed task 2 = {}s".format((end - start)))
+
+    print("Elapsed total = {}s".format((end - start)))
 
 """
 

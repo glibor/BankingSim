@@ -17,8 +17,8 @@ class CorporateClient(Agent):
         self.probabilityOfDefault = default_rate
         self.lossGivenDefault = loss_given_default
         self.loanInterestRate = loan_interest_rate
-        self.loanDemandSize = 2
-        self.creditElasticity = 1
+        self.loanDemandSize = 10
+        self.creditElasticity = 10
         self.realSectorHelper = RealSectorHelper(self)
         self.creditDemandFulfilled = False
 
@@ -36,7 +36,7 @@ class CorporateClient(Agent):
         return amount_paid
 
     def credit_demand(self, interest_rate):
-        loan = self.loanDemandSize * (1+interest_rate) ** (1 / self.creditElasticity)
+        loan = self.loanDemandSize * (1+interest_rate) ** -self.creditElasticity
         return loan
 
     def reset(self):

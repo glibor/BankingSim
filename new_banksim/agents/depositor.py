@@ -2,6 +2,7 @@ import math
 
 import numpy as np
 from mesa import Agent
+import time
 
 from exogeneous_factors import ExogenousFactors
 from strategies.depositor_ewa_strategy import DepositorEWAStrategy

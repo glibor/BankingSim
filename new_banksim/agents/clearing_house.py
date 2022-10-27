@@ -24,7 +24,6 @@ class ClearingHouse(Agent):
         self.banksNeedingLiquidity = list()
         self.banksOfferingLiquidity = list()
 
-
     def reset(self):
         self.interbankLendingMatrix[:, :] = 0
         self.reset_vetor_recuperacao()
@@ -49,7 +48,7 @@ class ClearingHouse(Agent):
         if ExogenousFactors.interbankPriority == InterbankPriority.Random:
             np.random.shuffle(self.banksOfferingLiquidity)
             np.random.shuffle(self.banksNeedingLiquidity)
-        elif ExogenousFactors.interbankPriority == InterbankPriority.RiskSorted:
+        elif ExogenousFactors.interbankPriority == InterbankPriority.RiskSorted:  # TODO: Organize bank list by MuIB
             self.sort_queues_by_risk(simulation, m, simulated_strategy)
 
         for i, bank in enumerate(self.banksOfferingLiquidity):
@@ -216,7 +215,7 @@ class ClearingHouse(Agent):
             if bank.is_insolvent():
                 central_bank.punish_contagion_insolvency(bank)
 
-    def accrue_interest(self, banks, interbank_rate): #TODO: Interbank loan interest rate is not fixed anymore
+    def accrue_interest(self, banks, interbank_rate):  # TODO: Interbank loan interest rate is not fixed anymore
         np.multiply(self.interbankLendingMatrix, (1 + interbank_rate), out=self.interbankLendingMatrix)
         for bank in banks:
             bank.balanceSheet.interbankLoan = self.get_interbank_market_position(bank)
@@ -258,7 +257,7 @@ class RealSectorClearingHouse(Agent):
 
         for firm in self.model.schedule.corporate_clients:
             self.firmsDemandingCredit.append(firm)
-            #firm.realSectorHelper.amountLiquidityLeftToBorrowOrLend = firm.credit_demand()
+            # firm.realSectorHelper.amountLiquidityLeftToBorrowOrLend = firm.credit_demand()
 
         if ExogenousFactors.interbankPriority == InterbankPriority.Random:
             np.random.shuffle(self.banksOfferingCredit)
@@ -282,10 +281,10 @@ class RealSectorClearingHouse(Agent):
                 try:
 
                     amount_offered = lender.realSectorHelper.amountLiquidityLeftToBorrowOrLend
+                    # print(amount_offered)
                     interest_rate = lender.get_real_sector_interest_rate(borrower.probabilityOfDefault)
 
-
-                    borrower.realSectorHelper.update_amount(interest_rate)
+                    borrower.realSectorHelper.update_amount(interest_rate + 1)
                     amount_requested = abs(borrower.realSectorHelper.amountLiquidityLeftToBorrowOrLend)
                     amount_lent = min(amount_offered, amount_requested)
 
@@ -300,12 +299,15 @@ class RealSectorClearingHouse(Agent):
                     self.defaultProbabilityMatrix[0, borrower_id] = borrower.probabilityOfDefault
                     self.defaultLGDMatrix[0, borrower_id] = borrower.lossGivenDefault
 
-
                     if lender.realSectorHelper.amountLiquidityLeftToBorrowOrLend == 0:
+                        lender.creditSupplyExhausted = True
                         lender = next(iterator_lenders)
+
+
                     if borrower.realSectorHelper.amountLiquidityLeftToBorrowOrLend == 0:
-                        borrower = next(iterator_borrowers)
                         borrower.creditDemandFulfilled = True
+                        borrower = next(iterator_borrowers)
+
                 except StopIteration:
                     break
 
@@ -313,10 +315,11 @@ class RealSectorClearingHouse(Agent):
             bank_loan_surplus = bank.balanceSheet.nonFinancialSectorLoan - self.get_real_market_position(bank)
             bank.balanceSheet.nonFinancialSectorLoan -= bank_loan_surplus
             bank.balanceSheet.liquidAssets += bank_loan_surplus
+
             bank.auxBalanceSheet = copy(bank.balanceSheet)
-        #print(self.realSectorInterestMatrix)
-        #print(self.defaultProbabilityMatrix)
-        #print(self.realSectorLendingMatrix)
+        # print(self.realSectorInterestMatrix)
+        # print(self.defaultProbabilityMatrix)
+        # print(self.realSectorLendingMatrix)
 
     def get_real_market_position(self, bank):
         bank_id_adjusted = (bank.unique_id - self.numberBanks) % self.numberBanks
@@ -343,6 +346,7 @@ class RealSectorClearingHouse(Agent):
 
     def reset(self):
         self.realSectorLendingMatrix = np.zeros((self.numberBanks, self.numberFirms))
+        # print(self.realSectorInterestMatrix)
         self.realSectorInterestMatrix = np.zeros((self.numberBanks, self.numberFirms))
         self.defaultProbabilityMatrix = np.zeros((1, self.numberFirms))
         self.defaultLGDMatrix = np.zeros((1, self.numberFirms))
