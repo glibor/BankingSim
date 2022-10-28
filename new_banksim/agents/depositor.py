@@ -16,6 +16,7 @@ class Depositor(Agent):
 
         # Bank Reference
         self.bank = bank
+        self.is_bank = False
 
         self.amountEarlyWithdraw = 0
         self.amountFinalWithdraw = 0

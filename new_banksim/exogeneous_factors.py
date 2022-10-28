@@ -24,7 +24,7 @@ class InterbankPriority(Enum):
 
 class ExogenousFactors:
     # Model
-    numberBanks = 5
+    numberBanks = 10
     depositInterestRate = 0.005
     interbankInterestRate = 0.01
     liquidAssetsInterestRate = 0.00
@@ -53,10 +53,10 @@ class ExogenousFactors:
     interbankPriority = InterbankPriority.Random
 
     # Depositors
-    areDepositorsZeroIntelligenceAgents = False
+    areDepositorsZeroIntelligenceAgents = True
     areBankRunsPossible = True
     amountWithdrawn = 1.0
-    probabilityofWithdrawal = 0.15
+    probabilityofWithdrawal = 0.5
 
     # Firms / Corporate Clients
     standardCorporateClients = True

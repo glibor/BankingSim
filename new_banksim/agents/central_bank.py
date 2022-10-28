@@ -12,6 +12,8 @@ class CentralBank(Agent):
                  minimum_capital_adequacy_ratio, is_intelligent, ewa_damping_factor, model):
         super().__init__(Util.get_unique_id(), model)
 
+        self.is_bank = False
+
         self.centralBankLendingInterestRate = central_bank_lending_interest_rate
         self.offersDiscountWindowLending = offers_discount_window_lending
         self.minimumCapitalAdequacyRatio = minimum_capital_adequacy_ratio

@@ -1,10 +1,10 @@
 class BankEWAStrategy:
     # capital ratio (capital / assets)
-    numberAlphaOptions = 10
+    numberAlphaOptions = 1
     alphaMaxValue = 1
 
     # liquidity ratio(liquid assets / deposits)
-    numberBetaOptions = 30
+    numberBetaOptions = 10
     betaMaxValue = 1
 
     # Mark-up rate: real sector 1+i=c/1-p * (1+mu)
@@ -12,7 +12,7 @@ class BankEWAStrategy:
     MuRMaxValue = 1
 
     # Mark-up rate: interbank sector 1+i=c/1-p * (1+mu)
-    numberMuIBOptions = 1
+    numberMuIBOptions = 10
     MuIBMaxValue = 1
 
     def __init__(self, alpha_index_option=0, beta_index_option=0,

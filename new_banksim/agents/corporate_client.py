@@ -13,6 +13,7 @@ class CorporateClient(Agent):
 
         self.loanAmount = 0
         self.percentageRepaid = 0
+        self.is_bank = False
 
         self.probabilityOfDefault = default_rate
         self.lossGivenDefault = loss_given_default

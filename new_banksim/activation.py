@@ -16,6 +16,7 @@ class MultiStepActivation:
         self.depositors = []
         self.corporate_clients = []
 
+
     def add_central_bank(self, central_bank):
         self.central_bank = central_bank
 
@@ -59,3 +60,7 @@ class MultiStepActivation:
         self.period = 2
         for _ in self.agents:
             _.period_2()
+
+    @property
+    def steps(self):
+        return self.cycle

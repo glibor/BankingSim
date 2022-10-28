@@ -175,7 +175,13 @@ class MyModel(BankingModel):
                              'liquid_assets': liquid_assets,
                              'Early': early_withdrawal,
                              'credit_demand_fullfiled': credit_demand_fullfiled,
-                             'credit_supply_exahausted': credit_supply_exahausted}
+                             'credit_supply_exahausted': credit_supply_exahausted,
+                             'beta_values': beta_values,
+                             'beta_sd': beta_sd,
+                             'interbank_interest_rate':interbank_interest_rate}#,
+
+            #agent_reporters={"Beta":lambda a:a.currentlyChosenStrategy.get_beta_value() if a.is_bank else 0,
+                           # "Interest_rate_real":lambda a:a.currentlyChosenStrategy.get_beta_value() if a.is_bank else 0}
         )
 
     def step(self):
@@ -218,10 +224,29 @@ def real_sector_interest_rate(model):
     average_interest = np.sum(weighted_matrix)
     return average_interest
 
+def interbank_interest_rate(model):
+    lending_matrix = np.abs(model.schedule.clearing_house.interbankLendingMatrix)
+    interest_matrix = model.schedule.clearing_house.interbankInterestMatrix
+    print(interest_matrix)
+    weights_matrix = lending_matrix / np.sum(lending_matrix)
+    weighted_matrix = np.multiply(weights_matrix, interest_matrix)
+    average_interest = np.sum(weighted_matrix)
+    return average_interest
+
 
 def liquid_assets(model):
     x = [i.balanceSheet.liquidAssets for i in model.schedule.banks]
     return sum(x)
+
+
+def beta_values(model):
+    x = [i.currentlyChosenStrategy.get_beta_value() for i in model.schedule.banks]
+    return np.mean(x)
+
+
+def beta_sd(model):
+    x = [i.currentlyChosenStrategy.get_beta_value() for i in model.schedule.banks]
+    return np.std(x)
 
 
 def credit_demand_fullfiled(model):
@@ -243,14 +268,15 @@ if __name__ == "__main__":
     start = time.perf_counter()
 
     modelo = MyModel()
-    modelo.run_model(400)
+    modelo.run_model(1000)
 
     Modelo_original = modelo.datacollector.get_model_vars_dataframe()
+    #data_agents = modelo.datacollector.get_agent_vars_dataframe()
     # Modelo_original
     Modelo_original.to_stata(r'output_Caso8_Desenv_Expansive.dta')
+    #data_agents.to_stata(r'output_agents.dta')
 
     end = time.perf_counter()
-    # print("Elapsed task 2 = {}s".format((end - start)))
 
     print("Elapsed total = {}s".format((end - start)))
 

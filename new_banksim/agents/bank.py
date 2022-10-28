@@ -19,6 +19,8 @@ class Bank(Agent):
         self.initialSize = 1 if bank_size_distribution != BankSizeDistribution.LogNormal \
             else Util.get_random_log_normal(-0.5, 1)
 
+        self.is_bank = True
+
         self.interbankHelper = InterbankHelper()
         self.guaranteeHelper = GuaranteeHelper()
         self.realSectorHelper = RealSectorHelper()
@@ -300,6 +302,14 @@ class Bank(Agent):
         c = self.get_wacc()
         # print((c / (1 - p))*(1/(1+1)))
         i = max((c / (1 - p)) * (1 + mu), 1) - 1
+
+        return i
+
+    def get_interbank_interest_rate(self):
+        strategy = self.currentlyChosenStrategy
+        mu = strategy.get_MuR_value()
+        c = self.get_wacc()
+        i = max(c * (1 + mu), 1) - 1
 
         return i
 
