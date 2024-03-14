@@ -12,6 +12,10 @@ class Util:
     def get_random_log_normal(mean, standard_deviation):
         return np.random.lognormal(mean, standard_deviation)
 
+    @staticmethod
+    def get_random_default_probability(a, b):
+        return np.random.beta(a, b)
+
     @classmethod
     def get_unique_id(cls):
         cls.id += 1

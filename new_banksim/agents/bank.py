@@ -1,10 +1,11 @@
 from copy import copy
 import time
 import numpy as np
-#from numba import njit
+# from numba import njit
 from mesa import Agent
 from numpy.random import choice
 from random import choices
+import warnings
 
 from exogeneous_factors import BankSizeDistribution, ExogenousFactors
 from strategies.bank_ewa_strategy import BankEWAStrategy
@@ -13,14 +14,14 @@ from util import Util
 
 class Bank(Agent):
 
-    def __init__(self, bank_size_distribution, is_intelligent, ewa_damping_factor, model):
+    def __init__(self, bank_size_distribution, is_intelligent, ewa_damping_factor, model, bank_id):
         super().__init__(Util.get_unique_id(), model)
 
         self.initialSize = 1 if bank_size_distribution != BankSizeDistribution.LogNormal \
             else Util.get_random_log_normal(-0.5, 1)
 
         self.is_bank = True
-
+        self.bank_id = bank_id
         self.interbankHelper = InterbankHelper()
         self.guaranteeHelper = GuaranteeHelper()
         self.realSectorHelper = RealSectorHelper()
@@ -34,35 +35,67 @@ class Bank(Agent):
 
         self.balanceSheet = BalanceSheet()
         self.auxBalanceSheet = None
+        self.lastProfit = 0
 
         self.isIntelligent = is_intelligent
         if self.isIntelligent:
-            self.strategiesOptionsInformation = BankEWAStrategy.bank_ewa_strategy_list()
+            # self.strategiesOptionsInformation = BankEWAStrategy.bank_ewa_strategy_list()
+            self.StrategiesId = self.model.bankStrategiesId
+            self.A, self.P, self.strategyProfitPercentageDamped = 3 * [np.zeros(self.model.bankStrategiesLength)]
             self.currentlyChosenStrategy = None
+            self.currentlyChosenStrategyId = None
             self.EWADampingFactor = ewa_damping_factor
 
     def update_strategy_choice_probability(self):
-        list_A, list_damp_pct = np.array([s.A for s in self.strategiesOptionsInformation]), np.array(
-            [s.strategyProfitPercentageDamped for s in self.strategiesOptionsInformation])
-        list_a = self.update_helper(list_A, list_damp_pct)
-        _exp = np.exp(list_a)
-        list_p = _exp / (np.sum(_exp))
+        p = np.max(self.P)
+        if p < 0.999:
+            self.A = self.A + 2 * self.strategyProfitPercentageDamped# / self.model.current_step  # 0.9999 *
+            m = np.max(self.A)
+            #if p > .9:
+            #    print(p)
+             #   print(m,np.max(self.strategyProfitPercentageDamped))
+            self.P = np.exp(self.A) / (np.sum(np.exp(self.A)))
 
-        list_f = np.cumsum(list_p)
-        for i, strategy in enumerate(self.strategiesOptionsInformation):
-            strategy.A, strategy.P, strategy.F = list_a[i], list_p[i], list_f[i]
+            if m > 1000:
+                self.limit_array()
+                # print(np.max(self.A))
+        #else:
+        #    print(p)
+            #print(np.max(self.strategyProfitPercentageDamped))
+        #elif p > 1:
+        #    self.P = self.P / p
 
-    @staticmethod
-    #@njit
-    def update_helper(l1, l2):
-        return 0.9999 * l1 + 0.005 * l2
+    def limit_array(self):
+        m = np.max(self.A)
+        new = self.A + 100 - m
+        self.A = new
+        self.P = np.exp(self.A) / (np.sum(np.exp(self.A)))
+
+        # print('Rolor',m)
 
     def pick_new_strategy(self):
         probability_threshold = Util.get_random_uniform(1)
-        self.currentlyChosenStrategy = [s for s in self.strategiesOptionsInformation if s.F > probability_threshold][0]
+        # _id = np.random.choice(self.StrategiesId, p=self.P)  # choice(self.StrategiesId, p=self.P)
+        # _id = np.random.choice(self.StrategiesId, p=self.P)  # choice(self.StrategiesId, p=self.P)
+        try:
+            _id = np.random.choice(self.StrategiesId, p=self.P)  # choice(self.StrategiesId, p=self.P)
+        except ValueError:
+            a = self.A
+            tmp = np.where(a > 0, a, 0)
+            tmp = np.where(tmp < 10, a, 10)
+            print(tmp)
+            print(np.max(tmp))
+            print(np.sum(tmp), 'cool')
+            # self.P = tmp / np.sum(tmp)
+            self.A = tmp
+            self.P = np.exp(tmp) / (np.sum(np.exp(tmp)))
+            print(self.P)
+            _id = choice(self.StrategiesId, p=self.P)
+        self.currentlyChosenStrategyId = _id
+        self.currentlyChosenStrategy = self.model.bankStrategies[_id]
 
     @staticmethod
-    #@njit
+    # @njit
     def choice(strats, p):
         random = np.random.random()
         count = 0
@@ -82,8 +115,11 @@ class Bank(Agent):
     def setup_balance_sheet_intelligent(self, strategy=None):  # TODO: ATUALIZAR PARA A NOVA VERSãO
         if strategy is None:
             strategy = self.currentlyChosenStrategy
+        risk_appetite = strategy.get_gamma_value()
+
         self.balanceSheet.liquidAssets = self.initialSize * strategy.get_beta_value()
-        self.balanceSheet.nonFinancialSectorLoan = self.initialSize - self.balanceSheet.liquidAssets
+        self.balanceSheet.highRiskLoans = (self.initialSize - self.balanceSheet.liquidAssets) * risk_appetite
+        self.balanceSheet.nonFinancialSectorLoan = self.initialSize - self.balanceSheet.liquidAssets - self.balanceSheet.highRiskLoans
         self.balanceSheet.interbankLoan = 0
         self.balanceSheet.discountWindowLoan = 0
         self.balanceSheet.deposits = self.initialSize * (strategy.get_alpha_value() - 1)
@@ -94,6 +130,7 @@ class Bank(Agent):
         # loan_per_coporate_client = self.balanceSheet.nonFinancialSectorLoan / len(self.corporateClients)
         # for corporateClient in self.corporateClients:
         # corporateClient.loanAmount = loan_per_coporate_client
+
         deposit_per_depositor = -self.balanceSheet.deposits / len(self.depositors)
         for depositor in self.depositors:
             depositor.make_deposit(deposit_per_depositor)
@@ -110,35 +147,56 @@ class Bank(Agent):
                 return -self.balanceSheet.capital / total_risk_weighted_assets
         return 0
 
-    def adjust_capital_ratio(self, minimum_capital_ratio_required):  #TODO: Ajustar para novo modelo de clientes
+    def adjust_capital_ratio(self, minimum_capital_ratio_required):
         current_capital_ratio = self.get_capital_adequacy_ratio()
-        print(current_capital_ratio)
+
+        real_sector_clearing_house = self.model.schedule.real_sector_clearing_house
+        lender_id = self.bank_id
+        lending_vector = real_sector_clearing_house.realSectorLendingMatrix[lender_id, :]
+        high_risk_lending_vector = real_sector_clearing_house.highRiskLendingMatrix[lender_id, :]
         if current_capital_ratio <= minimum_capital_ratio_required:
             adjustment_factor = current_capital_ratio / minimum_capital_ratio_required
-            for corporateClient in self.corporateClients:
-                original_loan_amount = corporateClient.loanAmount
-                new_loan_amount = original_loan_amount * adjustment_factor
-                corporateClient.loanAmount = new_loan_amount
-                self.balanceSheet.liquidAssets += (original_loan_amount - new_loan_amount)
 
-            # self.update_non_financial_sector_loans()
+            self.model.schedule.real_sector_clearing_house.realSectorLendingMatrix[lender_id,
+            :] = lending_vector * adjustment_factor
+            self.model.schedule.real_sector_clearing_house.highRiskLendingMatrix[lender_id,
+            :] = high_risk_lending_vector * adjustment_factor
+            self.update_non_financial_sector_loans(lending_vector, high_risk_lending_vector)
 
-    def update_non_financial_sector_loans(self):
-        self.balanceSheet.nonFinancialSectorLoan = sum(
-            client.loanAmount for client in self.corporateClients)
+    def adjust_capital_ratio_alternative(self, minimum_capital_ratio_required):
+        current_capital_ratio = self.get_capital_adequacy_ratio()
+        print(self.balanceSheet.liquidAssets, 'cool')
+        if current_capital_ratio <= minimum_capital_ratio_required:
+            adjustment_factor = current_capital_ratio / minimum_capital_ratio_required
+            initial_hr = self.balanceSheet.highRiskLoans
+            initial = self.balanceSheet.nonFinancialSectorLoan
+            self.balanceSheet.highRiskLoans = self.balanceSheet.highRiskLoans * adjustment_factor
+            self.balanceSheet.nonFinancialSectorLoan = self.balanceSheet.nonFinancialSectorLoan * adjustment_factor
+            self.balanceSheet.liquidAssets += initial - self.balanceSheet.nonFinancialSectorLoan + initial_hr - self.balanceSheet.highRiskLoans
+        print(self.balanceSheet.liquidAssets)
+
+    def update_non_financial_sector_loans(self, lending_vector, high_risk_lending_vector):
+        # print(self.bank_id)
+        # print(self.balanceSheet.nonFinancialSectorLoan-np.sum(lending_vector))
+        self.balanceSheet.liquidAssets += self.balanceSheet.nonFinancialSectorLoan - np.sum(
+            lending_vector) + self.balanceSheet.highRiskLoans - np.sum(high_risk_lending_vector)
+        self.balanceSheet.nonFinancialSectorLoan = np.sum(lending_vector)
+        self.balanceSheet.highRiskLoans = np.sum(high_risk_lending_vector)
 
     def get_real_sector_risk_weighted_assets(self):
-        if ExogenousFactors.standardCorporateClients:
-            return self.balanceSheet.nonFinancialSectorLoan * ExogenousFactors.CorporateLoanRiskWeight
-        else:
-            for corporateClient in self.corporateClients:
-                if corporateClient.probabilityOfDefault == ExogenousFactors.retailCorporateClientDefaultRate:
-                    return corporateClient.loanAmount * ExogenousFactors.retailCorporateLoanRiskWeight
-                elif corporateClient.probabilityOfDefault == ExogenousFactors.wholesaleCorporateClientDefaultRate:
-                    return corporateClient.loanAmount * ExogenousFactors.wholesaleCorporateLoanRiskWeight
+        """if ExogenousFactors.standardCorporateClients:
+                    pass
                 else:
-                    # default risk weight
-                    return corporateClient.loanAmount * ExogenousFactors.CorporateLoanRiskWeight
+                    real_sector_clearing_house = self.model.schedule.real_sector_clearing_house
+                    lender_id = self.bank_id
+                    lending_vector = real_sector_clearing_house.realSectorLendingMatrix[lender_id, :]
+                    risk_weighted = np.sum(lending_vector) * ExogenousFactors.CorporateLoanRiskWeight
+                    lending_vector = real_sector_clearing_house.highRiskLendingMatrix[lender_id, :]
+                    risk_weighted += lending_vector * ExogenousFactors.HighRiskCorporateLoanRiskWeight
+                    return risk_weighted
+        """
+        return (self.balanceSheet.nonFinancialSectorLoan * ExogenousFactors.CorporateLoanRiskWeight +
+                self.balanceSheet.highRiskLoans * ExogenousFactors.HighRiskCorporateLoanRiskWeight)
 
     def withdraw_deposit(self, amount_to_withdraw):
         if amount_to_withdraw > 0:
@@ -166,24 +224,50 @@ class Bank(Agent):
         for depositor in self.depositors:
             depositor.deposit.amount *= deposits_interest_rate
 
-    def collect_loans(self, real_sector_clearing_house):  # TODO: UPDATE BASED IN THE REAL SECTOR CLEARING HOUSE MATRIX
-        lender_id = (self.unique_id - real_sector_clearing_house.numberBanks) % real_sector_clearing_house.numberBanks
+    def collect_loans(self, real_sector_clearing_house):
+
+        # Standard loans
+        lender_id = self.bank_id
         lending_vector = real_sector_clearing_house.realSectorLendingMatrix[lender_id, :]
         interest_rate_vector = real_sector_clearing_house.realSectorInterestMatrix[lender_id, :]
         LGD_vector = real_sector_clearing_house.defaultLGDMatrix
         prob_matrix = real_sector_clearing_house.defaultProbabilityMatrix
 
-        # print("Antes",sum(lending_vector))
-
+        initial = np.sum(real_sector_clearing_house.realSectorLendingMatrix[lender_id, :])
         for n, i in enumerate(lending_vector):
-
-            if Util.get_random_uniform(1) <= prob_matrix[0, n]:
+            rand = Util.get_random_uniform(1)
+            if rand <= prob_matrix[0, n]:
                 amount_paid = i * (1 - LGD_vector[0, n])
+
             else:
                 amount_paid = i * (1 + interest_rate_vector[n])
             lending_vector[n] = amount_paid
+        # print(100*'-')
+        # print("Initial: "+str(np.sum(initial)))
+        # print('Gain: '+str(np.sum(lending_vector)-initial))
+        # print(100 * '-')
+        self.balanceSheet.nonFinancialSectorLoan = np.sum(lending_vector)
 
-        self.balanceSheet.nonFinancialSectorLoan = sum(lending_vector)
+        # High risk loans
+
+        lending_vector = real_sector_clearing_house.highRiskLendingMatrix[lender_id, :]
+        interest_rate_vector = real_sector_clearing_house.highRiskInterestMatrix[lender_id, :]
+
+        LGD_vector = real_sector_clearing_house.defaultLGDMatrix
+        prob_matrix = real_sector_clearing_house.highRiskDefaultProbabilityMatrix
+
+        for n, i in enumerate(lending_vector):
+            rand = Util.get_random_uniform(1)
+
+            if rand <= prob_matrix[0, n]:
+
+                amount_paid = i * (1 - LGD_vector[0, n])
+            else:
+                amount_paid = i * (1 + interest_rate_vector[n])
+
+            lending_vector[n] = amount_paid
+
+        self.balanceSheet.highRiskLoans = np.sum(lending_vector)
 
     def offers_liquidity(self):
         return self.liquidityNeeds > 0
@@ -222,41 +306,44 @@ class Bank(Agent):
         original_capital = self.auxBalanceSheet.assets + self.auxBalanceSheet.liabilities
         if ExogenousFactors.banksHaveLimitedLiability:
             resulting_capital = max(resulting_capital, 0)
-        # print(resulting_capital,original_capital)
         return resulting_capital - original_capital
 
     def calculate_profit(self, minimum_capital_ratio_required):
         if self.isIntelligent:
-            strategy = self.currentlyChosenStrategy
+            strategyId = self.currentlyChosenStrategyId
 
             self.bankRunOccurred = (self.withdrawalsCounter > ExogenousFactors.numberDepositorsPerBank / 2)
             # print(self.withdrawalsCounter,ExogenousFactors.numberDepositorsPerBank / 2)
             if self.bankRunOccurred:
-                original_loans = self.auxBalanceSheet.nonFinancialSectorLoan
-                resulting_loans = self.balanceSheet.nonFinancialSectorLoan
+                original_loans = self.auxBalanceSheet.totalNonFinancialLoans
+                resulting_loans = self.balanceSheet.totalNonFinancialLoans
                 delta = original_loans - resulting_loans
                 if delta > 0:
                     self.balanceSheet.nonFinancialSectorLoan -= delta * 0.02
+                    self.balanceSheet.highRiskLoans -= delta * 0.02
 
             profit = self.get_profit()
-
-            strategy.strategyProfit = profit
+            # strategy.strategyProfit = profit
 
             if ExogenousFactors.isCapitalRequirementActive:
                 current_capital_ratio = self.get_capital_adequacy_ratio()
 
                 if current_capital_ratio < minimum_capital_ratio_required:
                     delta_capital_ratio = minimum_capital_ratio_required - current_capital_ratio
-                    strategy.strategyProfit -= delta_capital_ratio
+                    profit -= delta_capital_ratio
 
             # Return on Equity, based on initial shareholders equity.
-            strategy.strategyProfitPercentage = -strategy.strategyProfit / self.auxBalanceSheet.capital
-            strategy.strategyProfitPercentageDamped = strategy.strategyProfitPercentage * self.EWADampingFactor
+
+            strategyProfitPercentage = -(profit / self.auxBalanceSheet.capital)
+            # strategyProfitPercentage=profit
+            self.lastProfit = strategyProfitPercentage
+            self.strategyProfitPercentageDamped = np.zeros(self.model.bankStrategiesLength)
+            self.strategyProfitPercentageDamped[strategyId] = strategyProfitPercentage * self.EWADampingFactor
 
     def liquidate(self):
         #  first, sell assets...
-        self.balanceSheet.liquidAssets += self.balanceSheet.nonFinancialSectorLoan
-        self.balanceSheet.nonFinancialSectorLoan = 0
+        self.balanceSheet.liquidAssets += self.balanceSheet.totalNonFinancialLoans
+        self.balanceSheet.nonFinancialSectorLoan = self.balanceSheet.highRiskLoans = 0
 
         if self.is_interbank_creditor():
             self.balanceSheet.liquidAssets += self.balanceSheet.interbankLoan
@@ -282,7 +369,9 @@ class Bank(Agent):
                 self.balanceSheet.interbankLoan += self.balanceSheet.liquidAssets
 
         # ... finally, if there is any money left, it is proportionally divided among depositors.
+
         percentage_deposits_payable = self.balanceSheet.liquidAssets / np.absolute(self.balanceSheet.deposits)
+
         self.balanceSheet.deposits *= percentage_deposits_payable
 
         for depositor in self.depositors:
@@ -292,32 +381,50 @@ class Bank(Agent):
 
     def get_wacc(self):
         strategy = self.currentlyChosenStrategy
-        c = (1 + self.model.depositInterestRate) * (1 - strategy.get_alpha_value())
+        c = (1 + self.model.depositInterestRate) * (1 - strategy.get_alpha_value()) + strategy.get_alpha_value()
+
         return c
 
     def get_real_sector_interest_rate(self, default_probability):
         strategy = self.currentlyChosenStrategy
         mu = strategy.get_MuR_value()
+        exo_rate = ExogenousFactors.liquidAssetsInterestRate
         p = default_probability
         c = self.get_wacc()
-        # print((c / (1 - p))*(1/(1+1)))
-        i = max((c / (1 - p)) * (1 + mu), 1) - 1
+        i = max(max((c / (1 - p)) * (1 + mu), 1) - 1, exo_rate)  # max(max(c * (1 + mu), 1) - 1, exo_rate)
+        # print(c, i,p)
 
         return i
 
     def get_interbank_interest_rate(self):
         strategy = self.currentlyChosenStrategy
-        mu = strategy.get_MuR_value()
+        exo_rate = ExogenousFactors.liquidAssetsInterestRate
+        mu = strategy.get_MuIB_value()
         c = self.get_wacc()
-        i = max(c * (1 + mu), 1) - 1
+        i = max(max(c * (1 + mu), 1) - 1, exo_rate)
 
         return i
 
+    @property
+    def probability_entropy(self):
+        p = self.P
+        lp = np.log(self.P)
+        return -np.sum(p*lp)
+
+    @property
+    def portfolio_risk(self):
+        real_sector_clearing_house = self.model.schedule.real_sector_clearing_house
+        lender_id = self.bank_id
+        lending_vector = real_sector_clearing_house.realSectorLendingMatrix[lender_id, :]
+        risk = real_sector_clearing_house.defaultProbabilityMatrix
+        risk_weights = np.multiply(lending_vector, risk)
+        return np.sum(risk_weights / np.sum(lending_vector))
+
     def is_insolvent(self):
-        return self.balanceSheet.capital > 0
+        return self.balanceSheet.capital >= 0
 
     def is_solvent(self):
-        return self.balanceSheet.capital <= 0
+        return self.balanceSheet.capital < 0
 
     def is_interbank_creditor(self):
         return self.balanceSheet.interbankLoan >= 0
@@ -331,19 +438,37 @@ class Bank(Agent):
             self.update_strategy_choice_probability()
             self.pick_new_strategy()
             self.setup_balance_sheet_intelligent(self.currentlyChosenStrategy)
+            if ExogenousFactors.isCapitalRequirementActive:
+                pass  # self.adjust_capital_ratio_alternative(ExogenousFactors.minimumCapitalAdequacyRatio)
+
+
         else:
             self.setup_balance_sheet()
+        # print('Period 0')
+        # print(self.balanceSheet)
+
         # self.auxBalanceSheet = copy(self.balanceSheet)
 
     def period_1(self):
+        # print(self.balanceSheet.nonFinancialSectorLoan)
+        # print(self.balanceSheet.assets+self.balanceSheet.liabilities)
         # First, banks try to use liquid assets to pay early withdrawals...
         self.use_liquid_assets_to_pay_depositors_back()
+
         # ... if needed, they will try interbank market by clearing house.
         # ... if banks still needs liquidity, central bank might rescue...
 
     def period_2(self):
+        resulting_capital = self.balanceSheet.assets + self.balanceSheet.liabilities
+        original_capital = self.auxBalanceSheet.assets + self.auxBalanceSheet.liabilities
+        # print('Period 2.1')
+
+        # print("+"*100)
+        # print(self.balanceSheet.capital)
         self.accrue_interest_balance_sheet()
         self.collect_loans(self.model.schedule.real_sector_clearing_house)
+        if not self.is_liquid():
+            print('top', self.balanceSheet)
 
 
 class InterbankHelper:
@@ -366,6 +491,7 @@ class RealSectorHelper:
         self.acumulatedLiquidity = 0
         self.riskSorting = None
         self.amountLiquidityLeftToBorrowOrLend = 0
+        self.amountLiquidityLeftToBorrowOrLendHighRisk = 0
 
 
 class GuaranteeHelper:
@@ -384,20 +510,46 @@ class BalanceSheet:
         self.discountWindowLoan = 0
         self.interbankLoan = 0
         self.nonFinancialSectorLoan = 0
+        self.highRiskLoans = 0
         self.liquidAssets = 0
 
     @property
     def capital(self):
         return -(self.liquidAssets +
-                 self.nonFinancialSectorLoan +
+                 self.totalNonFinancialLoans +
                  self.interbankLoan +
                  self.discountWindowLoan +
                  self.deposits)
 
     @property
     def assets(self):
-        return self.liquidAssets + self.nonFinancialSectorLoan + np.max(self.interbankLoan, 0)
+        return self.liquidAssets + self.totalNonFinancialLoans + np.max(self.interbankLoan, 0)
 
     @property
     def liabilities(self):
         return self.deposits + self.discountWindowLoan + np.min(self.interbankLoan, 0)
+
+    @property
+    def totalNonFinancialLoans(self):
+        return self.highRiskLoans + self.nonFinancialSectorLoan
+
+    def __repr__(self):
+        name = """
+Assets
+
+Liquid assets: {}
+Non financial loans: {}
+High risk loans: {}
+Interbank: {}
+
+Liabilities
+
+Capital: {}
+Deposits: {}
+Interbank: {}
+Discount window: {}
+        """
+        lista = [self.liquidAssets, self.nonFinancialSectorLoan, self.highRiskLoans, max(self.interbankLoan, 0),
+                 self.capital, self.deposits, min(self.interbankLoan, 0), self.discountWindowLoan]
+        final = name.format(*lista)
+        return final

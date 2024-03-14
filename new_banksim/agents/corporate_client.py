@@ -1,11 +1,12 @@
 from mesa import Agent
 
 from util import Util
+from exogeneous_factors import ExogenousFactors
 
 
 class CorporateClient(Agent):
 
-    def __init__(self, default_rate, loss_given_default, loan_interest_rate, bank, model):
+    def __init__(self, default_rate,loss_given_default, loan_interest_rate,risk_type, bank, model, firm_id):
         super().__init__(Util.get_unique_id(), model)
 
         # Bank Reference
@@ -14,12 +15,14 @@ class CorporateClient(Agent):
         self.loanAmount = 0
         self.percentageRepaid = 0
         self.is_bank = False
+        self.firm_id = firm_id
+        self.riskType = risk_type
 
         self.probabilityOfDefault = default_rate
         self.lossGivenDefault = loss_given_default
         self.loanInterestRate = loan_interest_rate
-        self.loanDemandSize = 1.5/200
-        self.creditElasticity = 10
+        self.loanDemandSize = ExogenousFactors.standardCorporateClientLoanSize
+        self.creditElasticity = ExogenousFactors.standardCorporateClientElasticity
         self.realSectorHelper = RealSectorHelper(self)
         self.creditDemandFulfilled = False
 
@@ -37,7 +40,8 @@ class CorporateClient(Agent):
         return amount_paid
 
     def credit_demand(self, interest_rate):
-        loan = self.loanDemandSize * interest_rate ** -self.creditElasticity
+        loan = self.loanDemandSize - (
+                    interest_rate * self.creditElasticity)  # self.loanDemandSize * (interest_rate ** -self.creditElasticity)
         return loan
 
     def reset(self):
@@ -60,11 +64,10 @@ class RealSectorHelper:
 
     def __init__(self, firm):
         self.firm = firm
-        self.amountLiquidityLeftToBorrowOrLend = 0
         self.alreadyBorrowed = 0
 
     def calculate_credit_demand(self, interest_rate, already_borrowed):
-        amount = max(0,self.firm.credit_demand(interest_rate) - already_borrowed)
+        amount = max(0, self.firm.credit_demand(interest_rate) - already_borrowed)
         return amount
 
     def update_amount(self, interest_rate):
@@ -72,5 +75,8 @@ class RealSectorHelper:
         self.amountLiquidityLeftToBorrowOrLend = -amount
 
     def get_loan(self, amount):
-        self.amountLiquidityLeftToBorrowOrLend += amount
+        # self.amountLiquidityLeftToBorrowOrLend += amount
         self.alreadyBorrowed += amount
+
+    def amountLiquidityLeftToBorrowOrLend(self, interest_rate):
+        return self.calculate_credit_demand(interest_rate, self.alreadyBorrowed)
