@@ -32,19 +32,23 @@ class Depositor(Agent):
             self.EWADampingFactor = ewa_damping_factor
 
     def update_strategy_choice_probability(self):
-        list_a = np.array([s.A + 0.005*s.strategyProfit for s in self.strategiesOptionsInformation])
+        list_a = np.array([s.A + 0.005 * s.strategyProfit for s in self.strategiesOptionsInformation])
         _exp = np.exp(list_a)
         list_p = _exp / np.sum(_exp)
+
         list_f = np.cumsum(list_p)
-        #print(list_a)
-        #print(_exp)
-        #print(list_p)
+        # print(list_a)
+        # print(_exp)
+        # print(list_p)
         for i, strategy in enumerate(self.strategiesOptionsInformation):
             strategy.A, strategy.P, strategy.F = list_a[i], list_p[i], list_f[i]
 
     def pick_new_strategy(self):
         probability_threshold = Util.get_random_uniform(1)
-        self.currentlyChosenStrategy = [s for s in self.strategiesOptionsInformation if s.F > probability_threshold][0]
+        try:
+            self.currentlyChosenStrategy = [s for s in self.strategiesOptionsInformation if s.F > probability_threshold][0]
+        except IndexError:
+            self.currentlyChosenStrategy = [s for s in self.strategiesOptionsInformation if s.F > probability_threshold or np.isnan(s.F)][0]
 
     def make_deposit(self, amount):
         self.initialDeposit.amount = amount
@@ -55,6 +59,7 @@ class Depositor(Agent):
             # Smart depositor
             bank_car = self.bank.get_capital_adequacy_ratio()
             shock = 0 if bank_car > self.safetyTreshold else ExogenousFactors.amountWithdrawn
+            #print(bank_car,self.safetyTreshold)
         else:
             if simulation:
                 # if in simulation, uses last real withdrawal by this depositor

@@ -24,25 +24,26 @@ class InterbankPriority(Enum):
 
 class ExogenousFactors:
     # Model
-    numberBanks = 10
-    depositInterestRate = 0.005
-    interbankInterestRate = 0.01
-    liquidAssetsInterestRate = 0.00
-    illiquidAssetDiscountRate = 0.15
+    numberBanks = 50
+    depositInterestRate = 0.08
+    interbankInterestRate = 0.01  # Unused
+    liquidAssetsInterestRate = 0.08
+    illiquidAssetDiscountRate = 0.05
     interbankLendingMarketAvailable = True
     banksMaySellNonLiquidAssetsAtDiscountPrices = True
     banksHaveLimitedLiability = False
 
     # Banks
     bankSizeDistribution = BankSizeDistribution.Vanilla
-    numberDepositorsPerBank = 50
-    numberCorporateClientsPerBank = 200
+    numberDepositorsPerBank = 3
+    numberCorporateClientsPerBank = 2
+    numberHighRiskCorporateClientsPerBank = 2
     areBanksZeroIntelligenceAgents = False
 
     # Central Bank
-    centralBankLendingInterestRate = 0.045
+    centralBankLendingInterestRate = depositInterestRate + 0.06
     offersDiscountWindowLending = True
-    minimumCapitalAdequacyRatio = -10
+    minimumCapitalAdequacyRatio = 0.08
     isCentralBankZeroIntelligenceAgent = True
     isCapitalRequirementActive = False
     isTooBigToFailPolicyActive = False
@@ -50,17 +51,30 @@ class ExogenousFactors:
 
     # Clearing House
     isClearingGuaranteeAvailable = False
-    interbankPriority = InterbankPriority.Random
+    interbankPriority = InterbankPriority.RiskSorted
 
     # Depositors
     areDepositorsZeroIntelligenceAgents = True
     areBankRunsPossible = True
     amountWithdrawn = 1.0
-    probabilityofWithdrawal = 0.5
+    probabilityofWithdrawal = 0.15
 
     # Firms / Corporate Clients
     standardCorporateClients = True
+    heterogeneousRiskDistribution = False
+    demandMultiplier = 1.2
+    standardCorporateClientLoanSize = demandMultiplier*(1 / (numberCorporateClientsPerBank+numberHighRiskCorporateClientsPerBank)) # 1*2  # 10
+    standardCorporateClientElasticity = (.7 / (numberCorporateClientsPerBank+numberHighRiskCorporateClientsPerBank))  # (1/1.20)*2
     standardCorporateClientDefaultRate = 0.045
+    betaParamAlpha = 5  # 5#5 High-spread
+    betaParamBeta = 95  # 95 #High-spread
+
+    highRiskCorporateClientDefaultRate = 0.1
+    highRiskCorporateClientLossGivenDefault = 1
+    highRiskCorporateClientLoanInterestRate = 0.065
+    highRiskCorporateClientLoanSize = 1 / (numberCorporateClientsPerBank+numberHighRiskCorporateClientsPerBank)  # 1*2  # 10
+    highRiskCorporateClientElasticity = .7 / (numberCorporateClientsPerBank+numberHighRiskCorporateClientsPerBank)
+
     standardCorporateClientLossGivenDefault = 1
     standardCorporateClientLoanInterestRate = 0.08
     wholesaleCorporateClientDefaultRate = 0.04
@@ -72,7 +86,8 @@ class ExogenousFactors:
 
     # Risk Weights
     CashRiskWeight = 0
-    CorporateLoanRiskWeight = 1
+    CorporateLoanRiskWeight = 2
+    HighRiskCorporateLoanRiskWeight = 5
     InterbankLoanRiskWeight = 1
     retailCorporateLoanRiskWeight = 0.75
     wholesaleCorporateLoanRiskWeight = 1

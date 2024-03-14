@@ -48,10 +48,11 @@ class ClearingHouse(Agent):
             else:
                 self.banksOfferingLiquidity.append(bank)
 
+
         if ExogenousFactors.interbankPriority == InterbankPriority.Random:
             np.random.shuffle(self.banksOfferingLiquidity)
             np.random.shuffle(self.banksNeedingLiquidity)
-        elif ExogenousFactors.interbankPriority == InterbankPriority.RiskSorted:  # TODO: Organize bank list by MuIB
+        elif ExogenousFactors.interbankPriority == InterbankPriority.RiskSorted:
             self.sort_queues_by_risk_rate(simulation, m, simulated_strategy)
 
         for i, bank in enumerate(self.banksOfferingLiquidity):
@@ -70,17 +71,19 @@ class ClearingHouse(Agent):
                 try:
                     amount_offered = lender.interbankHelper.amountLiquidityLeftToBorrowOrLend
                     amount_requested = abs(borrower.interbankHelper.amountLiquidityLeftToBorrowOrLend)
+
                     amount_lent = min(amount_offered, amount_requested)
                     interest_rate = lender.get_interbank_interest_rate()
                     lender.interbankHelper.amountLiquidityLeftToBorrowOrLend -= amount_lent
                     borrower.interbankHelper.amountLiquidityLeftToBorrowOrLend += amount_lent
 
-                    lender_id = (lender.unique_id - self.numberBanks) % self.numberBanks
-                    borrower_id = (borrower.unique_id - self.numberBanks) % self.numberBanks
+                    lender_id = lender.bank_id
+                    borrower_id = borrower.bank_id
 
                     self.interbankLendingMatrix[lender_id, borrower_id] = amount_lent
                     self.interbankLendingMatrix[borrower_id, lender_id] = -amount_lent
                     self.interbankInterestMatrix[lender_id, borrower_id] = interest_rate
+                    self.interbankInterestMatrix[borrower_id, lender_id] = interest_rate
 
                     if lender.interbankHelper.amountLiquidityLeftToBorrowOrLend == 0:
                         lender = next(iterator_lenders)
@@ -94,17 +97,18 @@ class ClearingHouse(Agent):
 
             if bank.offers_liquidity():
                 # if there is any amount left offered, assign it to liquid assets
-                bank.balanceSheet.liquidAssets += bank.interbankHelper.amountLiquidityLeftToBorrowOrLend
+
+                # bank.balanceSheet.liquidAssets += bank.interbankHelper.amountLiquidityLeftToBorrowOrLend
+
                 bank.interbankHelper.amountLiquidityLeftToBorrowOrLend = 0
 
             if not bank.is_interbank_creditor():
                 # if bank used interbank loan to pay depositors back, adjust deposit account
                 bank.balanceSheet.deposits -= bank.balanceSheet.interbankLoan
-
             bank.liquidityNeeds = bank.interbankHelper.amountLiquidityLeftToBorrowOrLend
 
     def get_interbank_market_position(self, bank):
-        bank_id_adjusted = (bank.unique_id - self.numberBanks) % self.numberBanks
+        bank_id_adjusted = bank.bank_id
         return np.sum(self.interbankLendingMatrix[bank_id_adjusted, :])
 
     def sort_queues_by_risk(self, simulation, bank_id_simulating, strategy_simulated):
@@ -125,8 +129,8 @@ class ClearingHouse(Agent):
             else:
                 bank.interbankHelper.riskSorting = bank.currentlyChosenStrategy
 
-        self.banksOfferingLiquidity.sort(key=bank_to_alpha_beta).reverse()
-        self.banksNeedingLiquidity.sort(key=bank_to_alpha_beta).reverse()
+        self.banksOfferingLiquidity.sort(key=bank_to_alpha_beta, reverse=True)
+        self.banksNeedingLiquidity.sort(key=bank_to_alpha_beta, reverse=True)
 
     def sort_queues_by_risk_rate(self, simulation, bank_id_simulating, strategy_simulated):
 
@@ -150,8 +154,8 @@ class ClearingHouse(Agent):
             else:
                 bank.interbankHelper.riskSorting = bank.currentlyChosenStrategy
 
-        self.banksOfferingLiquidity.sort(key=bank_to_interest_rate).reverse()
-        self.banksNeedingLiquidity.sort(key=bank_to_alpha_beta).reverse()
+        self.banksOfferingLiquidity.sort(key=bank_to_interest_rate)
+        self.banksNeedingLiquidity.sort(key=bank_to_alpha_beta, reverse=True)
 
     def interbank_clearing_guarantee(self, banks):
         self.calculate_total_and_biggest_interbank_debt(banks)
@@ -221,11 +225,13 @@ class ClearingHouse(Agent):
 
     def interbank_contagion(self, banks, central_bank):
         self.reset_vetor_recuperacao()
+        initial_insolvent_banks_ids = list()
         for bank in banks:
 
-            bank_id = (bank.unique_id - self.numberBanks) % self.numberBanks
-
-            if not bank.is_solvent() and bank.is_interbank_debtor():
+            bank_id = bank.bank_id
+            if bank.is_insolvent():
+                initial_insolvent_banks_ids.append(bank.bank_id)
+            if bank.is_insolvent() and bank.is_interbank_debtor():
                 if self.clearingGuaranteeAvailable:
                     _max = max(0, -self.totalCollateralDeficit - self.totalCollateralSurplus)
                     self.vetor_recuperacao[bank_id] = (self.totalInterbankDebt + _max) / self.totalInterbankDebt
@@ -233,20 +239,22 @@ class ClearingHouse(Agent):
                     self.vetor_recuperacao[bank_id] = (bank.balanceSheet.interbankLoan + min(
                         -bank.balanceSheet.interbankLoan,
                         bank.balanceSheet.capital)) / bank.balanceSheet.interbankLoan
-
         for i in range(self.numberBanks):
             for j in range(i, self.numberBanks):
                 self.interbankLendingMatrix[i, j] *= self.vetor_recuperacao[j]
                 self.interbankLendingMatrix[j, i] = -self.interbankLendingMatrix[i, j]
 
         for bank in banks:
-            bank_id = (bank.unique_id - self.numberBanks) % self.numberBanks
+            bank_id = bank.bank_id
             bank.balanceSheet.interbankLoan = np.sum(self.interbankLendingMatrix[bank_id, :])
+            if bank_id in initial_insolvent_banks_ids:
+                continue
             if bank.is_insolvent():
                 central_bank.punish_contagion_insolvency(bank)
+                # print(bank.bank_id)
 
-    def accrue_interest(self, banks, interbank_rate):  # TODO: Interbank loan interest rate is not fixed anymore
-        np.multiply(self.interbankLendingMatrix, self.interbankInterestMatrix+1, out=self.interbankLendingMatrix)
+    def accrue_interest(self, banks, interbank_rate):
+        np.multiply(self.interbankLendingMatrix, self.interbankInterestMatrix + 1, out=self.interbankLendingMatrix)
         for bank in banks:
             bank.balanceSheet.interbankLoan = self.get_interbank_market_position(bank)
 
@@ -265,29 +273,42 @@ class ClearingHouse(Agent):
 
 class RealSectorClearingHouse(Agent):
 
-    def __init__(self, number_banks, number_firms, model):
+    def __init__(self, number_banks, number_firms, number_high_risk_firms, model):
         super().__init__(Util.get_unique_id(), model)
         self.numberFirms = number_firms
+        self.numberHighRiskFirms = number_high_risk_firms
         self.numberBanks = number_banks
         self.is_bank = False
 
         self.realSectorLendingMatrix = np.zeros((self.numberBanks, self.numberFirms))
         self.realSectorInterestMatrix = np.zeros((self.numberBanks, self.numberFirms))
+        self.highRiskLendingMatrix = np.zeros((self.numberBanks, self.numberHighRiskFirms))
+        self.highRiskInterestMatrix = np.zeros((self.numberBanks, self.numberHighRiskFirms))
         self.defaultProbabilityMatrix = np.zeros((1, self.numberFirms))
+        self.highRiskDefaultProbabilityMatrix = np.zeros((1, self.numberHighRiskFirms))
         self.defaultLGDMatrix = np.zeros((1, self.numberFirms))
         self.vetor_recuperacao = np.ones(self.numberBanks)
         # worst case scenario...
         self.firms = list()
         self.banksOfferingCredit = list()
+        self.banksOfferingHighRiskCredit = list()
         self.firmsDemandingCredit = list()
+        self.highRiskFirmsDemandingCredit = list()
 
     def organize_real_sector_market(self, banks, simulation=False, m=0, simulated_strategy=None):
         for bank in self.model.schedule.banks:
             bank.realSectorHelper.amountLiquidityLeftToBorrowOrLend = bank.balanceSheet.nonFinancialSectorLoan
-            self.banksOfferingCredit.append(bank)
+            bank.realSectorHelper.amountLiquidityLeftToBorrowOrLendHighRisk = bank.balanceSheet.highRiskLoans
+            if bank.balanceSheet.nonFinancialSectorLoan > 0:
+                self.banksOfferingCredit.append(bank)
+            if bank.balanceSheet.highRiskLoans > 0:
+                self.banksOfferingHighRiskCredit.append(bank)
 
-        for firm in self.model.schedule.corporate_clients:
-            self.firmsDemandingCredit.append(firm)
+        for n, firm in enumerate(self.model.schedule.corporate_clients):
+            if firm.riskType == 'HighRisk':
+                self.highRiskFirmsDemandingCredit.append(firm)
+            else:
+                self.firmsDemandingCredit.append(firm)
             # firm.realSectorHelper.amountLiquidityLeftToBorrowOrLend = firm.credit_demand()
 
         if ExogenousFactors.interbankPriority == InterbankPriority.Random:
@@ -310,21 +331,25 @@ class RealSectorClearingHouse(Agent):
             borrower = next(iterator_borrowers)
             while True:
                 try:
-
                     amount_offered = lender.realSectorHelper.amountLiquidityLeftToBorrowOrLend
-                    # print(amount_offered)
+
                     interest_rate = lender.get_real_sector_interest_rate(borrower.probabilityOfDefault)
 
-                    borrower.realSectorHelper.update_amount(interest_rate + 1)
-                    amount_requested = abs(borrower.realSectorHelper.amountLiquidityLeftToBorrowOrLend)
+                    amount_requested = abs(
+                        borrower.realSectorHelper.calculate_credit_demand(interest_rate + 1,
+                                                                          borrower.realSectorHelper.alreadyBorrowed))
                     amount_lent = min(amount_offered, amount_requested)
+                    #print(lender.balanceSheet)
+                    #print(amount_offered, amount_requested, interest_rate)
 
                     lender.realSectorHelper.amountLiquidityLeftToBorrowOrLend -= amount_lent
                     borrower.realSectorHelper.get_loan(amount_lent)
 
-                    lender_id = (lender.unique_id - self.numberBanks) % self.numberBanks
-                    borrower_id = (borrower.unique_id - self.numberFirms) % self.numberFirms
-                    # print(borrower_id,amount_requested,amount_lent,interest_rate+1)
+                    lender_id = lender.bank_id
+                    borrower_id = borrower.firm_id
+                    # print([(i.unique_id - self.numberFirms) % self.numberFirms for i in self.banksOfferingCredit])
+                    # print([i.firm_id for i in self.firmsDemandingCredit])
+                    # print(lender_id,borrower_id, amount_requested, amount_lent, interest_rate + 1)
 
                     self.realSectorLendingMatrix[lender_id, borrower_id] += amount_lent
                     self.realSectorInterestMatrix[lender_id, borrower_id] = interest_rate
@@ -335,7 +360,54 @@ class RealSectorClearingHouse(Agent):
                         lender.creditSupplyExhausted = True
                         lender = next(iterator_lenders)
 
-                    if borrower.realSectorHelper.amountLiquidityLeftToBorrowOrLend == 0:
+                    if borrower.realSectorHelper.calculate_credit_demand(interest_rate + 1,
+                                                                         borrower.realSectorHelper.alreadyBorrowed) <= 0:
+                        borrower.creditDemandFulfilled = True
+                        borrower = next(iterator_borrowers)
+
+                except StopIteration:
+                    break
+
+        iterator_lenders = iter(self.banksOfferingHighRiskCredit)
+        iterator_borrowers = iter(self.highRiskFirmsDemandingCredit)
+
+        if len(self.banksOfferingHighRiskCredit) > 0 and len(self.highRiskFirmsDemandingCredit) > 0:
+            lender = next(iterator_lenders)
+            borrower = next(iterator_borrowers)
+            self.defaultLGDMatrix = np.zeros((1, self.numberHighRiskFirms))
+            while True:
+                try:
+                    amount_offered = lender.realSectorHelper.amountLiquidityLeftToBorrowOrLendHighRisk
+                    interest_rate = lender.get_real_sector_interest_rate(borrower.probabilityOfDefault)
+
+
+                    amount_requested = abs(
+                        borrower.realSectorHelper.calculate_credit_demand(interest_rate + 1,
+                                                                          borrower.realSectorHelper.alreadyBorrowed))
+
+                    amount_lent = min(amount_offered, amount_requested)
+                    #print(lender.balanceSheet)
+                    #print(amount_offered, amount_requested,amount_lent)
+                    lender.realSectorHelper.amountLiquidityLeftToBorrowOrLendHighRisk -= amount_lent
+                    borrower.realSectorHelper.get_loan(amount_lent)
+
+                    lender_id = lender.bank_id
+                    borrower_id = borrower.firm_id
+                    # print([(i.unique_id - self.numberFirms) % self.numberFirms for i in self.banksOfferingCredit])
+                    # print([i.firm_id for i in self.firmsDemandingCredit])
+                    # print(lender_id,borrower_id, amount_requested, amount_lent, interest_rate + 1)
+
+                    self.highRiskLendingMatrix[lender_id, borrower_id] += amount_lent
+                    self.highRiskInterestMatrix[lender_id, borrower_id] = interest_rate
+                    self.highRiskDefaultProbabilityMatrix[0, borrower_id] = borrower.probabilityOfDefault
+                    self.defaultLGDMatrix[0, borrower_id] = borrower.lossGivenDefault
+
+                    if lender.realSectorHelper.amountLiquidityLeftToBorrowOrLendHighRisk == 0:
+                        lender.creditSupplyExhausted = True
+                        lender = next(iterator_lenders)
+
+                    if borrower.realSectorHelper.calculate_credit_demand(interest_rate + 1,
+                                                                         borrower.realSectorHelper.alreadyBorrowed) <= 0:
                         borrower.creditDemandFulfilled = True
                         borrower = next(iterator_borrowers)
 
@@ -344,23 +416,31 @@ class RealSectorClearingHouse(Agent):
 
         for bank in banks:
             bank_loan_surplus = bank.balanceSheet.nonFinancialSectorLoan - self.get_real_market_position(bank)
-            bank.balanceSheet.nonFinancialSectorLoan -= bank_loan_surplus
-            bank.balanceSheet.liquidAssets += bank_loan_surplus
 
+            bank_high_risk_loan_surplus = bank.balanceSheet.highRiskLoans - self.get_high_risk_position(bank)
+            bank.balanceSheet.nonFinancialSectorLoan -= bank_loan_surplus
+            tmp = bank.balanceSheet.highRiskLoans
+            bank.balanceSheet.highRiskLoans -= bank_high_risk_loan_surplus
+            bank.balanceSheet.liquidAssets += bank_loan_surplus + bank_high_risk_loan_surplus
             bank.auxBalanceSheet = copy(bank.balanceSheet)
-        # print(self.realSectorInterestMatrix)
+
+        # print(self.highRiskLendingMatrix)
         # print(self.defaultProbabilityMatrix)
         # print(self.realSectorLendingMatrix)
 
     def get_real_market_position(self, bank):
-        bank_id_adjusted = (bank.unique_id - self.numberBanks) % self.numberBanks
+        bank_id_adjusted = bank.bank_id
         return np.sum(self.realSectorLendingMatrix[bank_id_adjusted, :])
+
+    def get_high_risk_position(self, bank):
+        bank_id_adjusted = bank.bank_id
+        return np.sum(self.highRiskLendingMatrix[bank_id_adjusted, :])
 
     def sort_queues_by_risk(self, simulation, bank_id_simulating, strategy_simulated):
 
-        def bank_to_alpha_beta(_bank):
+        def bank_to_MuR(_bank):
             strategy = _bank.interbankHelper.riskSorting
-            return strategy.get_alpha_value(), strategy.get_beta_value()
+            return strategy.get_MuR_value()
 
         def firm_to_risk(_firm):
             p = _firm.probabilityOfDefault
@@ -372,17 +452,21 @@ class RealSectorClearingHouse(Agent):
             else:
                 bank.interbankHelper.riskSorting = bank.currentlyChosenStrategy
 
-        self.banksOfferingCredit.sort(key=bank_to_alpha_beta).reverse()
-        self.firmsDemandingCredit.sort(key=firm_to_risk).reverse()
+        self.banksOfferingCredit.sort(key=bank_to_MuR)
+        self.firmsDemandingCredit.sort(key=firm_to_risk)
+        self.highRiskFirmsDemandingCredit.sort(key=firm_to_risk)
 
     def reset(self):
         self.realSectorLendingMatrix = np.zeros((self.numberBanks, self.numberFirms))
         # print(self.realSectorInterestMatrix)
         self.realSectorInterestMatrix = np.zeros((self.numberBanks, self.numberFirms))
+        self.highRiskLendingMatrix = np.zeros((self.numberBanks, self.numberHighRiskFirms))
+        self.highRiskInterestMatrix = np.zeros((self.numberBanks, self.numberHighRiskFirms))
         self.defaultProbabilityMatrix = np.zeros((1, self.numberFirms))
         self.defaultLGDMatrix = np.zeros((1, self.numberFirms))
         self.banksOfferingCredit.clear()
         self.firmsDemandingCredit.clear()
+        self.highRiskFirmsDemandingCredit.clear()
 
     def period_0(self):
         self.organize_real_sector_market(self.model.schedule.banks)

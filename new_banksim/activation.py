@@ -16,7 +16,6 @@ class MultiStepActivation:
         self.depositors = []
         self.corporate_clients = []
 
-
     def add_central_bank(self, central_bank):
         self.central_bank = central_bank
 
@@ -38,7 +37,8 @@ class MultiStepActivation:
     @property
     def agents(self):
         # The order is important
-        return itertools.chain(self.depositors, self.banks, [self.real_sector_clearing_house],[self.clearing_house], [self.central_bank],
+        return itertools.chain(self.depositors, self.banks, [self.real_sector_clearing_house], [self.clearing_house],
+                               [self.central_bank],
                                self.corporate_clients)
 
     def reset_cycle(self):

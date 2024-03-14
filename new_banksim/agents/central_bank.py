@@ -75,6 +75,7 @@ class CentralBank(Agent):
     def make_banks_sell_non_liquid_assets(banks):
         for bank in banks:
             if not bank.is_liquid():
+                print("Bank sold assets")
                 bank.use_non_liquid_assets_to_pay_depositors_back()
 
     @staticmethod
@@ -95,11 +96,14 @@ class CentralBank(Agent):
     def punish_insolvency(self, bank):
         insolvency_penalty = 0.5
         bank.balanceSheet.nonFinancialSectorLoan *= 1 - insolvency_penalty
+        bank.balanceSheet.highRiskLoans *= 1 - insolvency_penalty
         self.insolvencyPerCycleCounter += 1
 
     def punish_contagion_insolvency(self, bank):
         self.insolvencyDueToContagionPerCycleCounter += 1
-        self.punish_insolvency(bank)
+        insolvency_penalty = 0.5
+        bank.balanceSheet.nonFinancialSectorLoan *= 1 - insolvency_penalty
+        bank.balanceSheet.highRiskLoans *= 1 - insolvency_penalty
 
     def calculate_final_utility(self, banks):
         if self.isIntelligent:
@@ -146,11 +150,14 @@ class CentralBank(Agent):
 
     def period_2(self):
         for bank in self.banks:
+
             if CentralBank.is_bank_too_big_to_fail(bank):
                 CentralBank.bailout(bank)
             if not bank.is_liquid():
+
                 CentralBank.punish_illiquidity(bank)
-            if not bank.is_solvent():
+            if bank.is_insolvent():
+
                 self.punish_insolvency(bank)
 
         if self.model.interbankLendingMarketAvailable:
